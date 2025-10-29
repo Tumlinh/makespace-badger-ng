@@ -36,6 +36,16 @@ This is an enhancement on top of the original Badger, allowing labels to be
 printed which include dates, suitable for labelling things in a way which
 meets the Makespace storage requirements
 
+### QR Codes
+
+![QR Code UI](qr_code.png)
+
+This features allows to generate QR codes from text. Templates are available for popular features such as sending a message by email/SMS/WhatsApp and sharing access to WiFi.
+
+Printing custom images isn't supported yet although the logic exists (see `Label` class and its `inner_image` attribute).
+
+Just like with the name badge, personal fobs can be used to quickly populate name and contact information from database.
+
 ## Operation
 
 Just scanning a fob will default to printing a name badge (if the fob is
@@ -98,6 +108,7 @@ It depends on:
 * pyusb
 * tkinter (part of standard Python 3 installation)
 * playsound
+* qrcode
 
 There's quite a few command-line options and different commands, but for the
 main UI:
