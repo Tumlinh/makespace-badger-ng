@@ -2,7 +2,7 @@
 
 import tkinter as tk
 from tkinter import ttk
-from ui import NameBadgeUI, TroveLabelUI, GeneralLabelUI, DatabaseUI, UpdateDelayer
+from ui import NameBadgeUI, TroveLabelUI, GeneralLabelUI, DatabaseUI, QrCodeUI, UpdateDelayer
 from printer import DisplayPrinter
 
 class BadgerApp(ttk.Frame):
@@ -31,11 +31,13 @@ class BadgerApp(ttk.Frame):
         self.trovelabel_ui = TroveLabelUI(self.nb, self.printer)
         self.general_ui = GeneralLabelUI(self.nb, self.printer)
         self.db_ui = DatabaseUI(self.nb, self.db, self.printer)
+        self.qrcode_ui = QrCodeUI(self.nb, self.printer)
 
         self.nb.add(self.namebadge_ui, text="Name Badge")
         self.nb.add(self.trovelabel_ui, text="Storage Label")
         self.nb.add(self.general_ui, text="General Label")
         self.nb.add(self.db_ui, text="Edit Tag")
+        self.nb.add(self.qrcode_ui, text="QR Code")
 
         if self.tagreader:
             self.wait_for_tag_gone = None
@@ -63,6 +65,7 @@ class BadgerApp(ttk.Frame):
         self.namebadge_ui.reset()
         self.general_ui.reset()
         self.db_ui.reset()
+        self.qrcode_ui.reset()
 
     def handle_tag(self, event):
         if not self.tagreader:
@@ -101,6 +104,7 @@ class BadgerApp(ttk.Frame):
                 self.nb.select(self.namebadge_ui)
                 self.namebadge_ui.event_generate("<<Print_Label>>")
                 self.trovelabel_ui.populate(name, comment)
+                self.qrcode_ui.populate(name, comment)
             elif buttons == 1:
                 self.db_ui.populate(tag, name, comment)
                 self.nb.select(self.db_ui)

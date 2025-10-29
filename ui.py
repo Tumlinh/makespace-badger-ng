@@ -12,6 +12,8 @@ from printer import DisplayPrinter
 
 import time
 
+import qrcode_generator
+
 UPDATE_DELAY=200
 
 class LabelPreview(tk.Frame):
@@ -45,6 +47,53 @@ class LabelPreview(tk.Frame):
         self.lbl = Label(lines, dpi=self.dpi,
                          size_mm=self.size_mm,
                          padding_mm=self.padding_mm)
+        img = self.lbl.image()
+        img = img.resize((self.canvas_width, self.canvas_height))
+        self.bmp = ImageTk.BitmapImage(img, foreground='white')
+        self.canvas.create_rectangle(0, 0, self.canvas.winfo_reqwidth(), self.canvas.winfo_reqheight(), fill='black')
+        self.canvas.create_image(self.canvas.winfo_reqwidth() / 2, self.canvas.winfo_reqheight() / 2, image=self.bmp)
+
+    def image(self):
+        return self.lbl.image()
+
+class QrCodeLabelPreview(tk.Frame):
+    def __init__(self, master=None, width=400, dpi=300, size_mm=(89, 36), padding_mm=(0, 0, 0, 0)):
+        super().__init__(master)
+        self.master = master
+
+        self.size_mm = size_mm
+        self.padding_mm = Label.Padding(
+            left=padding_mm[0],
+            top=padding_mm[1],
+            right=padding_mm[2],
+            bottom=padding_mm[3],
+        )
+        self.aspect_ratio = self.size_mm[1] / self.size_mm[0]
+
+        self.canvas_width = width
+        self.canvas_height = int(width * self.aspect_ratio)
+        self.dpi = dpi
+
+        self.canvas = tk.Canvas(self, width=self.canvas_width, height=self.canvas_height, background='white', bd=0)
+        self.canvas.pack()
+        self.qrcode_text = [''] # text to be turned into a QR code
+        self.qrcode = None # image representing the QR code
+        self.comment = [''] # text description to be rendered next to the QR code
+        self.update(self.qrcode_text, self.comment)
+
+    def update(self, qrcode_text, comment):
+        if comment != self.comment:
+            self.comment = copy.deepcopy(comment)
+
+        # Only generate the QR code if its text changed or it hasn't been generated yet
+        if qrcode_text != self.qrcode_text or self.qrcode is None:
+            self.qrcode = qrcode_generator.generate_qrcode(qrcode_text)
+            self.qrcode_text = copy.deepcopy(qrcode_text)
+
+        self.lbl = Label(comment, dpi=self.dpi,
+                         size_mm=self.size_mm,
+                         padding_mm=self.padding_mm,
+                         inner_img=self.qrcode)
         img = self.lbl.image()
         img = img.resize((self.canvas_width, self.canvas_height))
         self.bmp = ImageTk.BitmapImage(img, foreground='white')
@@ -528,6 +577,147 @@ class GeneralLabelUI(tk.Frame):
         self.textbox.delete("1.0", "end")
         self.textbox.insert('1.0', "Create a Label\nWith all the content you want\nMaybe a Haiku")
 
+class QrCodeUI(tk.Frame):
+    def __init__(self, master=None, printer=DisplayPrinter()):
+        super().__init__(master)
+        self.master = master
+        self.printer = printer
+        self.create_widgets()
+        self.updater = UpdateDelayer(self, self.update_preview)
+        self.name = "Your Name"
+        self.contact = "<contact>"
+
+    def update_preview(self):
+        qrcode_text, comment = self.get_lines()
+        self.preview.update(qrcode_text, comment)
+        self.event_generate("<<Interacted>>")
+
+    def get_lines(self):
+        # Text always adds an invisible trailing newline, so remove that
+        # Don't use strip('\n') because the user might have added deliberate
+        # blank lines for formatting
+        qrcode_text = self.textbox.get('1.0', 'end')[:-1]
+        comment = self.textbox2.get('1.0', 'end')[:-1].split('\n')
+        return qrcode_text, comment
+
+    def __text_modified(self, event):
+        self.updater.set_modified()
+        self.textbox.edit_modified(False)
+        self.textbox2.edit_modified(False)
+
+    def __print(self):
+        self.update_preview()
+        img = self.preview.image()
+        self.printer.print_image(img)
+
+    def select_template(self, qrcode_text, comment):
+        self.textbox.delete("1.0", "end")
+        self.textbox2.delete("1.0", "end")
+        self.textbox.insert('1.0', qrcode_text)
+        self.textbox2.insert('1.0', comment)
+
+    def create_widgets(self):
+        columns = 5
+        row = 0
+        self.grid(padx=20, pady=20)
+
+        # Templates
+        print_issue_subject = "Makespace - 3D print issue"
+        print_issue_body = "Hi!\nJust letting you know that there's been an issue with your print: Spaghetti/AMS/other. Consequently, your print failed/was paused.\n\nCheers,\n"
+        print_issue_comment = "My print failed?                    \n<- Scan this and let me know, it will take just a sec :)"
+        self.template1 = ttk.Button(self, text="Mail to",
+                                       command=lambda: self.select_template("mailto:" + self.contact + "?subject=" + print_issue_subject + "&body=" + print_issue_body, self.name + "\n\n" + print_issue_comment))
+        self.template1.grid(column = 0, row = row, sticky = 'nwes')
+        self.template2 = ttk.Button(self, text="SMS",
+                                       command=lambda: self.select_template("sms:" + self.contact + "?body=" + print_issue_body, self.name + "\n\n" + print_issue_comment))
+        self.template2.grid(column = 1, row = row, sticky = 'nwes')
+        self.template3 = ttk.Button(self, text="WhatsApp",
+                                       command=lambda: self.select_template("https://api.whatsapp.com/send?phone=" + self.contact, self.name))
+        self.template3.grid(column = 2, row = row, sticky = 'nwes')
+        self.template4 = ttk.Button(self, text="Equipment",
+                                       command=lambda: self.select_template("https://equipment.makespace.org/", "<Equipment name>\n\n<- Manuals & issue tickets"))
+        self.template4.grid(column = 3, row = row, sticky = 'nwes')
+        self.template5 = ttk.Button(self, text="WiFi",
+                                       command=lambda: self.select_template("WIFI:S:<SSID>;T:<WEP|WPA|blank>;P:<PASSWORD>;;", "WiFi\n<SSID>"))
+        self.template5.grid(column = 4, row = row, sticky = 'nwes')
+        row +=1
+
+        # QR code text entry with scrollbars. This is the text that gets turned into a QR code
+        self.textbox_lbl = tk.Label(self, text="QR code text:")
+        self.textbox_lbl.grid(column = 0, row = row, sticky='w', columnspan=columns)
+        row +=1
+
+        self.textbox = tk.Text(self, width=32, height=1, wrap="none", font=('Arial', 11))
+        ys = ttk.Scrollbar(self, orient = 'vertical', command = self.textbox.yview)
+        xs = ttk.Scrollbar(self, orient = 'horizontal', command = self.textbox.xview)
+        self.textbox['yscrollcommand'] = ys.set
+        self.textbox['xscrollcommand'] = xs.set
+        self.textbox.insert('1.0', "")
+
+        self.textbox.grid(column = 0, row = row, sticky = 'nwes', columnspan=columns - 1)
+        ys.grid(column = 4, row = row, sticky = 'w')
+        row += 1
+
+        xs.grid(column = 0, row = row, sticky = 'we', columnspan=columns - 1)
+        row += 1
+
+        # Comment entry with scrollbars. This text is a description for the QR code
+        self.textbox2_lbl = tk.Label(self, text="Comment:")
+        self.textbox2_lbl.grid(column = 0, row = row, sticky='w', columnspan=columns)
+        row +=1
+
+        self.textbox2 = tk.Text(self, width=32, height=2, wrap="none", font=('Arial', 11))
+        ys = ttk.Scrollbar(self, orient = 'vertical', command = self.textbox2.yview)
+        xs = ttk.Scrollbar(self, orient = 'horizontal', command = self.textbox2.xview)
+        self.textbox2['yscrollcommand'] = ys.set
+        self.textbox2['xscrollcommand'] = xs.set
+        self.textbox2.insert('1.0', "")
+
+        self.textbox2.grid(column = 0, row = row, sticky = 'nwes', columnspan=columns - 1)
+        ys.grid(column = 4, row = row, sticky = 'w')
+        row += 1
+
+        xs.grid(column = 0, row = row, sticky = 'we', columnspan=columns - 1)
+        row += 1
+
+        self.grid_columnconfigure(0, weight = 1)
+        self.grid_rowconfigure(0, weight = 1)
+
+        # Separator
+        self.sep = ttk.Separator(self, orient='horizontal')
+        self.sep.grid(column = 0, row = row, sticky='we', pady=20, columnspan=columns)
+        row +=1
+
+        # Label preview
+        self.preview_lbl = tk.Label(self, text="Label preview:")
+        self.preview_lbl.grid(column = 0, row = row, sticky='w', columnspan=columns)
+        row +=1
+
+        self.preview = QrCodeLabelPreview(self, 400, self.printer.dpi, padding_mm=self.printer.padding())
+        self.preview.grid(column = 0, row = row, columnspan=columns)
+        row += 1
+
+        # Print button
+        self.print = tk.Button(self, text='Print', font=('Arial', 24), command=self.__print)
+        self.print.grid(column = 0, row = row, ipady=10, sticky='nsew', columnspan=columns)
+        row += 1
+
+        self.textbox.bind('<<Modified>>', self.__text_modified)
+        self.textbox2.bind('<<Modified>>', self.__text_modified)
+
+    def populate(self, name, contact):
+        self.name = name
+        self.contact = contact
+        self.update_preview()
+
+    def reset(self):
+        self.name = "Your Name"
+        self.contact = "<contact>"
+        self.textbox.delete("1.0", "end")
+        self.textbox.insert('1.0', "")
+        self.textbox2.delete("1.0", "end")
+        self.textbox2.insert('1.0', "")
+
 def main():
     root = tk.Tk()
     nb = ttk.Notebook(root)
@@ -537,11 +727,13 @@ def main():
     trovelabel_ui = TroveLabelUI(nb)
     general_ui = GeneralLabelUI(nb)
     db_ui = DatabaseUI(nb)
+    qrcode_ui = QrCodeUI(nb)
 
     nb.add(namebadge_ui, text="Name Badge")
     nb.add(trovelabel_ui, text="Storage Label")
     nb.add(general_ui, text="General Label")
     nb.add(db_ui, text="Edit Tag")
+    nb.add(qrcode_ui, text="QR Code")
 
     app = root
     root.resizable(False,False)
